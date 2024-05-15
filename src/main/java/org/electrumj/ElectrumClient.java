@@ -7,9 +7,11 @@ import org.electrumj.dto.transactionget.BlockchainTransactionGetVerboseResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.net.SocketFactory;
 import javax.net.ssl.*;
 import java.io.*;
 import java.lang.reflect.Type;
+import java.net.Socket;
 import java.nio.channels.SocketChannel;
 import java.security.GeneralSecurityException;
 import java.security.KeyManagementException;
@@ -40,8 +42,12 @@ public class ElectrumClient {
     // The server port to connect to
     private int serverPort;
 
+    // Server using SSL?
+    private boolean useSSL;
+
     // Socket connection to the server.
-    private SSLSocket socket;
+    //private SSLSocket socket;
+    private Socket socket;
     // OutputStrem to write into to send data to the server.
     private OutputStream socketOutputStream;
     // InputStream to read from to read data from the server.
@@ -62,9 +68,10 @@ public class ElectrumClient {
      * @param serverHostnameOrIp
      * @param serverPort
      */
-    public ElectrumClient(String serverHostnameOrIp, int serverPort) {
+    public ElectrumClient(String serverHostnameOrIp, int serverPort, boolean useSSL) {
         this.serverHostnameOrIp = serverHostnameOrIp;
         this.serverPort = serverPort;
+        this.useSSL = useSSL;
     }
 
     /**
@@ -92,17 +99,33 @@ public class ElectrumClient {
      * @throws KeyManagementException
      * @throws NoSuchAlgorithmException
      * @throws IOException
-     */
+*/
     public void openConnection() throws GeneralSecurityException, IOException {
         assert !connectionOpened;
-        SSLSocketFactory factory = createTrustAllCertsSocketFactory();
-        socket = (SSLSocket)factory.createSocket(this.getServerHostnameOrIp(), this.getServerPort());
-        socket.startHandshake();
+
+        // Überprüfe, ob SSL verwendet werden soll oder nicht
+        if (this.useSSL) {
+            SSLSocketFactory factory = createTrustAllCertsSocketFactory();
+            // Verwende die Factory um eine SSLSocket zu erstellen
+            SSLSocket sslSocket = (SSLSocket) factory.createSocket(this.getServerHostnameOrIp(), this.getServerPort());
+            sslSocket.startHandshake(); // Starte den SSL-Handshake
+            socket = sslSocket; // Weise die SSLSocket der socket-Variable zu
+        } else {
+            SocketFactory factory = SocketFactory.getDefault();
+            // Verwende die Standard SocketFactory für nicht-SSL Verbindungen
+            socket = factory.createSocket(this.getServerHostnameOrIp(), this.getServerPort());
+        }
+
+        // Initialisiere die Streams, um Daten zu senden und zu empfangen
         socketOutputStream = new AppendNewLineOutputStream(socket.getOutputStream());
         socketInputStream = socket.getInputStream();
-        SocketChannel channel = socket.getChannel();
-        connectionOpened = true;
+        SocketChannel channel = socket.getChannel(); // Optional, falls du direkten Zugriff auf den SocketChannel benötigst
+        connectionOpened = true; // Markiere die Verbindung als geöffnet
     }
+
+
+
+
 
     /**
      * Closes the connection to the electrum server.
