@@ -26,7 +26,7 @@ import java.util.Map;
  *
  * Sample usage:
  * <pre>
- *     ElectrumClient client = new ElectrumClient("electrumx-core.1209k.com", 50002);
+ *     ElectrumClient client = new ElectrumClient("electrumx-core.1209k.com", 50002, false, ElectrumClient.ServerType.ELECTRUMX);
  *     client.open();
  *     String scripthash = Util.scripthash("1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa");
  *     BlockchainScripthashGetBalanceResponse response = client.blockchainScripthashGetBalance(scripthash);
@@ -37,18 +37,23 @@ public class ElectrumClient {
 
     private static final Logger log = LoggerFactory.getLogger(ElectrumClient.class);
 
+    public enum ServerType {
+        ELECTRUMX, ELECTRS
+    }
+
     // The server hostname or ip to connect to
     private String serverHostnameOrIp;
     // The server port to connect to
     private int serverPort;
+    // Server type (ElectrumX or Electrs)
+    private ServerType serverType;
 
     // Server using SSL?
     private boolean useSSL;
 
     // Socket connection to the server.
-    //private SSLSocket socket;
     private Socket socket;
-    // OutputStrem to write into to send data to the server.
+    // OutputStream to write into to send data to the server.
     private OutputStream socketOutputStream;
     // InputStream to read from to read data from the server.
     private InputStream socketInputStream;
@@ -67,20 +72,27 @@ public class ElectrumClient {
      * Creates a new ElectrumClient with the given parameters
      * @param serverHostnameOrIp
      * @param serverPort
+     * @param useSSL
+     * @param serverType
      */
-    public ElectrumClient(String serverHostnameOrIp, int serverPort, boolean useSSL) {
+    public ElectrumClient(String serverHostnameOrIp, int serverPort, boolean useSSL, ServerType serverType) {
         this.serverHostnameOrIp = serverHostnameOrIp;
         this.serverPort = serverPort;
         this.useSSL = useSSL;
+        this.serverType = serverType;
     }
 
     /**
      * Creates a new ElectrumClient with the given parameters
      * @param serverHostnameOrIpAndPort
+     * @param useSSL
+     * @param serverType
      */
-    public ElectrumClient(String serverHostnameOrIpAndPort) {
+    public ElectrumClient(String serverHostnameOrIpAndPort, boolean useSSL, ServerType serverType) {
         this.serverHostnameOrIp = serverHostnameOrIpAndPort.substring(0, serverHostnameOrIpAndPort.indexOf(":"));
         this.serverPort = Integer.valueOf(serverHostnameOrIpAndPort.substring(serverHostnameOrIpAndPort.indexOf(":") + 1));
+        this.useSSL = useSSL;
+        this.serverType = serverType;
     }
 
     // Section get server data
@@ -95,11 +107,11 @@ public class ElectrumClient {
     // Section connection
 
     /**
-     * Opens the connection to the electrum server.*
+     * Opens the connection to the electrum server.
      * @throws KeyManagementException
      * @throws NoSuchAlgorithmException
      * @throws IOException
-*/
+     */
     public void openConnection() throws GeneralSecurityException, IOException {
         assert !connectionOpened;
 
@@ -116,16 +128,14 @@ public class ElectrumClient {
             socket = factory.createSocket(this.getServerHostnameOrIp(), this.getServerPort());
         }
 
+        socket.setSoTimeout(90000); // Setze einen Timeout von 90 Sekunden
+
         // Initialisiere die Streams, um Daten zu senden und zu empfangen
         socketOutputStream = new AppendNewLineOutputStream(socket.getOutputStream());
         socketInputStream = socket.getInputStream();
         SocketChannel channel = socket.getChannel(); // Optional, falls du direkten Zugriff auf den SocketChannel benötigst
         connectionOpened = true; // Markiere die Verbindung als geöffnet
     }
-
-
-
-
 
     /**
      * Closes the connection to the electrum server.
@@ -134,7 +144,7 @@ public class ElectrumClient {
     public void closeConnection() throws IOException {
         assert connectionOpened;
         socketInputStream.close();
-        //socket.getOutputStream().close();
+        socketOutputStream.close();
         socket.close();
     }
 
@@ -212,6 +222,8 @@ public class ElectrumClient {
                 while (true) {
                     try {
                         String notificationJsonString = in.readLine();
+                        if (notificationJsonString == null) break;
+                        log.debug("Received notification: " + notificationJsonString);
                         ObjectMapper mapper = new ObjectMapper();
                         Map notificationMap = mapper.readValue(notificationJsonString, Map.class);
                         if (notificationMap.get("method").equals("blockchain.headers.subscribe")) {
@@ -233,7 +245,6 @@ public class ElectrumClient {
         }.start();
     }
 
-
     // Section requests
 
     /**
@@ -243,9 +254,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String blockchainBlockHeader(long height) throws Throwable {
-        Map params =new HashMap<String,Object>();
-        params.put("height", height);
-        params.put("cp_height", 0);
+        Object params = serverType == ServerType.ELECTRS ? List.of(height, 0) : Map.of("height", height, "cp_height", 0);
         String response = doRequest("blockchain.block.header", params, String.class);
         return response;
     }
@@ -259,9 +268,7 @@ public class ElectrumClient {
      */
     public BlockchainBlockHeaderWithProofResponse blockchainBlockHeader(long height, long cpHeight) throws Throwable {
         assert cpHeight > 0;
-        Map params = new HashMap<String,Object>();
-        params.put("height", height);
-        params.put("cp_height", cpHeight);
+        Object params = serverType == ServerType.ELECTRS ? List.of(height, cpHeight) : Map.of("height", height, "cp_height", cpHeight);
         BlockchainBlockHeaderWithProofResponse response = doRequest("blockchain.block.header", params, BlockchainBlockHeaderWithProofResponse.class);
         return response;
     }
@@ -276,10 +283,7 @@ public class ElectrumClient {
      */
     public BlockchainBlockHeadersResponse blockchainBlockHeaders(long startHeight, long count, long cpHeight) throws Throwable {
         assert cpHeight > 0;
-        Map params = new HashMap<String,Object>();
-        params.put("start_height", startHeight);
-        params.put("count", count);
-        params.put("cp_height", cpHeight);
+        Object params = serverType == ServerType.ELECTRS ? List.of(startHeight, count, cpHeight) : Map.of("start_height", startHeight, "count", count, "cp_height", cpHeight);
         BlockchainBlockHeadersResponse response = doRequest("blockchain.block.headers", params, BlockchainBlockHeadersResponse.class);
         return response;
     }
@@ -291,8 +295,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public double blockchainEstimatefee(long targetNumberOfBlocks) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("number", targetNumberOfBlocks);
+        Object params = serverType == ServerType.ELECTRS ? List.of(targetNumberOfBlocks) : Map.of("number", targetNumberOfBlocks);
         double response = doRequest("blockchain.estimatefee", params, Double.class);
         return response;
     }
@@ -303,7 +306,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public BlockchainHeader blockchainHeadersSubscribe() throws Throwable {
-        Map params = new HashMap<String,Object>();
+        Object params = serverType == ServerType.ELECTRS ? List.of() : Map.of();
         BlockchainHeader response = doRequest("blockchain.headers.subscribe", params, BlockchainHeader.class);
         return response;
     }
@@ -314,7 +317,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public double blockchainRelayfee() throws Throwable {
-        double response = doRequest("blockchain.relayfee", Double.class);
+        double response = doRequest("blockchain.relayfee", serverType == ServerType.ELECTRS ? List.of() : Map.of(), Double.class);
         return response;
     }
 
@@ -325,9 +328,9 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public BlockchainScripthashGetBalanceResponse blockchainScripthashGetBalance(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         BlockchainScripthashGetBalanceResponse response = doRequest("blockchain.scripthash.get_balance", params, BlockchainScripthashGetBalanceResponse.class);
+        log.debug("Received balance response: " + response);
         return response;
     }
 
@@ -338,8 +341,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public List<BlockchainScripthashGetTxsResponseEntry> blockchainScripthashGetHistory(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         Type returnType = Util.getParametrizedListType(BlockchainScripthashGetTxsResponseEntry.class);
         List<BlockchainScripthashGetTxsResponseEntry> response = (List<BlockchainScripthashGetTxsResponseEntry>) doRequest("blockchain.scripthash.get_history", params, returnType);
         return response;
@@ -352,8 +354,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public List<BlockchainScripthashGetTxsResponseEntry> blockchainScripthashGetMempool(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         Type returnType = Util.getParametrizedListType(BlockchainScripthashGetTxsResponseEntry.class);
         List<BlockchainScripthashGetTxsResponseEntry> response = (List<BlockchainScripthashGetTxsResponseEntry>) doRequest("blockchain.scripthash.get_mempool", params, returnType);
         return response;
@@ -366,8 +367,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public List<BlockchainScripthashListUnspentResponseEntry> blockchainScripthashListUnspent(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         Type returnType = Util.getParametrizedListType(BlockchainScripthashListUnspentResponseEntry.class);
         List<BlockchainScripthashListUnspentResponseEntry> response = (List<BlockchainScripthashListUnspentResponseEntry>) doRequest("blockchain.scripthash.listunspent", params, returnType);
         return response;
@@ -380,8 +380,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String blockchainScripthashSubscribe(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         String response = doRequest("blockchain.scripthash.subscribe", params, String.class);
         return response;
     }
@@ -393,8 +392,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public boolean blockchainScripthashUnsubscribe(String scripthash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("scripthash", scripthash);
+        Object params = serverType == ServerType.ELECTRS ? List.of(scripthash) : Map.of("scripthash", scripthash);
         boolean response = doRequest("blockchain.scripthash.unsubscribe", params, Boolean.class);
         return response;
     }
@@ -406,8 +404,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String blockchainTransactionBroadcast(String rawTx) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("raw_tx", rawTx);
+        Object params = serverType == ServerType.ELECTRS ? List.of(rawTx) : Map.of("raw_tx", rawTx);
         String response = doRequest("blockchain.transaction.broadcast", params, String.class);
         return response;
     }
@@ -419,9 +416,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String blockchainTransactionGetNoVerbose(String txHash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("tx_hash", txHash);
-        params.put("verbose", false);
+        Object params = serverType == ServerType.ELECTRS ? List.of(txHash, false) : Map.of("tx_hash", txHash, "verbose", false);
         String response = doRequest("blockchain.transaction.get", params, String.class);
         return response;
     }
@@ -433,9 +428,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public BlockchainTransactionGetVerboseResponse blockchainTransactionGetVerbose(String txHash) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("tx_hash", txHash);
-        params.put("verbose", true);
+        Object params = serverType == ServerType.ELECTRS ? List.of(txHash, true) : Map.of("tx_hash", txHash, "verbose", true);
         BlockchainTransactionGetVerboseResponse response = doRequest("blockchain.transaction.get", params, BlockchainTransactionGetVerboseResponse.class);
         return response;
     }
@@ -448,9 +441,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public BlockchainTransactionGetMerkleResponse blockchainTransactionGetMerkle(String txHash, long height) throws Throwable {
-        Map params = new HashMap<String,Object>();
-        params.put("tx_hash", txHash);
-        params.put("height", height);
+        Object params = serverType == ServerType.ELECTRS ? List.of(txHash, height) : Map.of("tx_hash", txHash, "height", height);
         BlockchainTransactionGetMerkleResponse response = doRequest("blockchain.transaction.get_merkle", params, BlockchainTransactionGetMerkleResponse.class);
         return response;
     }
@@ -463,10 +454,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String blockchainTransactionIdFromPosNoMerkle(long height, long txPos) throws Throwable {
-        Map params =new HashMap<String,Object>();
-        params.put("height", height);
-        params.put("tx_pos", txPos);
-        params.put("merkle", false);
+        Object params = serverType == ServerType.ELECTRS ? List.of(height, txPos, false) : Map.of("height", height, "tx_pos", txPos, "merkle", false);
         String response = doRequest("blockchain.transaction.id_from_pos", params, String.class);
         return response;
     }
@@ -479,10 +467,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public BlockchainTransactionIdFromPosMerkleResponse blockchainTransactionIdFromPosMerkle(long height, long txPos) throws Throwable {
-        Map params =new HashMap<String,Object>();
-        params.put("height", height);
-        params.put("tx_pos", txPos);
-        params.put("merkle", true);
+        Object params = serverType == ServerType.ELECTRS ? List.of(height, txPos, true) : Map.of("height", height, "tx_pos", txPos, "merkle", true);
         BlockchainTransactionIdFromPosMerkleResponse response = doRequest("blockchain.transaction.id_from_pos", params, BlockchainTransactionIdFromPosMerkleResponse.class);
         return response;
     }
@@ -493,7 +478,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public List<MempoolGetFeeHistogramResponseEntry> mempoolGetFeeHistogram() throws Throwable {
-        Map params =new HashMap<String,Object>();
+        Object params = serverType == ServerType.ELECTRS ? List.of() : Map.of();
         Type returnType = Util.getParametrizedListType(MempoolGetFeeHistogramResponseEntry.class);
         List<MempoolGetFeeHistogramResponseEntry> response = (List<MempoolGetFeeHistogramResponseEntry>) doRequest("mempool.get_fee_histogram", params, returnType);
         return response;
@@ -505,7 +490,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String serverBanner() throws Throwable {
-        String response = doRequest("server.banner", String.class);
+        String response = doRequest("server.banner", serverType == ServerType.ELECTRS ? List.of() : Map.of(), String.class);
         return response;
     }
 
@@ -515,7 +500,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public String serverDonationAddress() throws Throwable {
-        String response = doRequest("server.donation_address", String.class);
+        String response = doRequest("server.donation_address", serverType == ServerType.ELECTRS ? List.of() : Map.of(), String.class);
         return response;
     }
 
@@ -525,7 +510,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public ServerFeaturesResponse serverFeatures() throws Throwable {
-        ServerFeaturesResponse response = doRequest("server.features", ServerFeaturesResponse.class);
+        ServerFeaturesResponse response = doRequest("server.features", serverType == ServerType.ELECTRS ? List.of() : Map.of(), ServerFeaturesResponse.class);
         return response;
     }
 
@@ -535,7 +520,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public List<ServerPeersSubscribeResponseEntry> serverPeersSubscribe() throws Throwable {
-        Map params =new HashMap<String,Object>();
+        Object params = serverType == ServerType.ELECTRS ? List.of() : Map.of();
         Type returnType = Util.getParametrizedListType(ServerPeersSubscribeResponseEntry.class);
         List<ServerPeersSubscribeResponseEntry> response = (List<ServerPeersSubscribeResponseEntry>) doRequest("server.peers.subscribe", params, returnType);
         return response;
@@ -546,7 +531,7 @@ public class ElectrumClient {
      * @throws Throwable
      */
     public void serverPing() throws Throwable {
-        doRequest("server.ping", null, Object.class);
+        doRequest("server.ping", serverType == ServerType.ELECTRS ? List.of() : Map.of(), Object.class);
     }
 
     /**
@@ -557,26 +542,23 @@ public class ElectrumClient {
     public ServerVersionResponse serverVersion() throws Throwable {
         String clientName = "electrumj 0.1-SNAPSHOT";
         String protocolVersion = "1.4.2";
-        Map params =new HashMap<String,Object>();
-        params.put("client_name", clientName);
-        params.put("protocol_version", protocolVersion);
+        Object params = serverType == ServerType.ELECTRS ? List.of(clientName, protocolVersion) : Map.of("client_name", clientName, "protocol_version", protocolVersion);
         ServerVersionResponse response = doRequest("server.version", params, ServerVersionResponse.class);
         return response;
     }
 
-
     // Section request execution
 
     private <T> T doRequest(String method, Class<T> returnType) throws Throwable {
-        return doRequest(method, new HashMap<String,Object>(), returnType);
+        return doRequest(method, serverType == ServerType.ELECTRS ? List.of() : Map.of(), returnType);
     }
 
-    private  <T> T doRequest(String method, Map<String,Object> params, Class<T> returnType) throws Throwable {
+    private <T> T doRequest(String method, Object params, Class<T> returnType) throws Throwable {
         Object result = doRequest(method, params, Type.class.cast(returnType));
         return (T) result;
     }
 
-    private Object doRequest(String method, Map<String,Object> params, Type returnType) throws Throwable {
+    private Object doRequest(String method, Object params, Type returnType) throws Throwable {
         assert connectionOpened;
         JsonRpcClient client = new JsonRpcClient();
         Object result = client.invokeAndReadResponse(method, params, returnType,
