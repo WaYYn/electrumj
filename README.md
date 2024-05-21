@@ -40,16 +40,16 @@ dependencies {
 ### Useful resouces
 
 [Protocol documentation](https://electrumx-spesmilo.readthedocs.io/en/latest/protocol-methods.html)
-`<br/>`
 
-Used libraries:`<br/>`
-[jsonrpc4j](https://github.com/briandilley/jsonrpc4j) `<br/>`
+
+Used libraries:
+[jsonrpc4j](https://github.com/briandilley/jsonrpc4j) 
 [jackson](https://github.com/FasterXML/jackson)
-`<br/>`
 
-Additional resources:`<br/>`
-[Electrum documentation](https://electrum.readthedocs.io/en/latest/faq.html) `<br/>`
-[electrum source code](https://github.com/spesmilo/electrum) `<br/>`
-[Electrumx documentation](https://electrumx-spesmilo.readthedocs.io/en/latest/) `<br/>`
-[electrumx source code](https://github.com/spesmilo/electrumx) `<br/>`
+
+Additional resources:
+[Electrum documentation](https://electrum.readthedocs.io/en/latest/faq.html) 
+[electrum source code](https://github.com/spesmilo/electrum) 
+[Electrumx documentation](https://electrumx-spesmilo.readthedocs.io/en/latest/) 
+[electrumx source code](https://github.com/spesmilo/electrumx) 
 [Electrum go client](https://github.com/checksum0/go-electrum)
