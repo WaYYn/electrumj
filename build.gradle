@@ -5,7 +5,7 @@ plugins {
 group 'org.electrumj'
 version '0.1.1'
 
-sourceCompatibility = 1.11
+sourceCompatibility = 11
 compileJava.options.encoding = 'UTF-8'
 compileTestJava.options.encoding = 'UTF-8'
 javadoc.options.encoding = 'UTF-8'
@@ -16,23 +16,33 @@ repositories {
 }
 
 dependencies {
+    // Define versions in an ext block for easy updates
     ext {
-        logbackVersion = '1.1.11'
-        lombokVersion = '1.18.2'
+        logbackVersion = '1.4.14'
+        lombokVersion = '1.18.32'
     }
 
-    testImplementation 'junit:junit:4.12'
-    testImplementation 'com.google.guava:guava:28.2-android'
-
-    implementation 'org.bitcoinj:bitcoinj-core:0.15.8'
-
-    implementation 'com.github.briandilley.jsonrpc4j:jsonrpc4j:1.5.3'
-    implementation 'com.fasterxml.jackson.core:jackson-databind:2.8.5'
-
-    implementation "org.slf4j:slf4j-api:1.7.22"
+    // Implementation dependencies
+    implementation 'org.bitcoinj:bitcoinj-core:0.16.2'
+    implementation 'com.github.briandilley.jsonrpc4j:jsonrpc4j:1.6'
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.1'
+    implementation "org.slf4j:slf4j-api:2.0.13"
     implementation "ch.qos.logback:logback-core:$logbackVersion"
     implementation "ch.qos.logback:logback-classic:$logbackVersion"
 
+
+    // Lombok for compile-time code generation
     compileOnly "org.projectlombok:lombok:$lombokVersion"
     annotationProcessor "org.projectlombok:lombok:$lombokVersion"
+
+    // Test dependencies
+    testImplementation 'junit:junit:4.13.2'
+    testImplementation 'com.google.guava:guava-testlib:33.2.0-android'
+}
+
+// Use JUnit 4 for unit tests
+test {
+    useJUnit {
+        includeCategories 'junit4'
+    }
 }
